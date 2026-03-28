@@ -1,0 +1,46 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="false" level="WARNING" enabled_by_default="false">
+      <option name="ignoredPackages">
+        <list>
+          <option value="tkinter" />
+          <option value="aiogram" />
+          <option value="aiohttp" />
+          <option value="pydantic" />
+          <option value="pydantic-settings" />
+          <option value="asyncpg" />
+          <option value="SQLAlchemy" />
+          <option value="alembic" />
+          <option value="redis" />
+          <option value="aioredis" />
+          <option value="gspread" />
+          <option value="gspread-asyncio" />
+          <option value="google-auth" />
+          <option value="google-auth-oauthlib" />
+          <option value="google-auth-httplib2" />
+          <option value="python-dotenv" />
+          <option value="pytz" />
+          <option value="python-dateutil" />
+          <option value="black" />
+          <option value="flake8" />
+          <option value="mypy" />
+          <option value="pytest" />
+          <option value="pytest-asyncio" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="telethon.client.telegramclient.TelegramClient.*" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="SpellCheckingInspection" enabled="false" level="TYPO" enabled_by_default="false">
+      <option name="processCode" value="true" />
+      <option name="processLiterals" value="true" />
+      <option name="processComments" value="true" />
+    </inspection_tool>
+  </profile>
+</component>
