@@ -1,0 +1,6 @@
+pyaudio
+websockets
+pyautogui
+python-dotenv
+Pillow
+pyperclip
