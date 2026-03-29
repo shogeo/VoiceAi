@@ -6,39 +6,31 @@ class MouseTools:
     def __init__(self, converter: CoordinateConverter):
         self.converter = converter
 
-    async def _move_mouse(self, x: int, y: int) -> str:
+    async def _move_mouse(self, x: int, y: int, duration: float = 0.25) -> str:
         px, py = self.converter.norm_to_pixels(x, y)
-        pyautogui.moveTo(px, py, duration=0.25)
-        return f"mouse moved to ({x}, {y}) → ({px}, {py})"
+        pyautogui.moveTo(px, py, duration=duration)
+        return f"mouse moved to ({x}, {y}) → ({px}, {py}) over {duration}s"
 
-    async def _click(self, x: int, y: int, button: ButtonType = "left") -> str:
-        px, py = self.converter.norm_to_pixels(x, y)
-        pyautogui.moveTo(px, py, duration=0.2)
+    async def _click(self, button: ButtonType = "left") -> str:
         pyautogui.click(button=button)
-        return f"{button} click at ({x}, {y})"
+        return f"{button} click at current position"
 
-    async def _double_click(self, x: int, y: int, button: ButtonType = "left") -> str:
-        px, py = self.converter.norm_to_pixels(x, y)
-        pyautogui.moveTo(px, py, duration=0.2)
+    async def _double_click(self, button: ButtonType = "left") -> str:
         pyautogui.doubleClick(button=button)
-        return f"double {button} click at ({x}, {y})"
+        return f"double {button} click at current position"
 
-    async def _mouse_down(self, x: int, y: int, button: ButtonType = "left") -> str:
-        px, py = self.converter.norm_to_pixels(x, y)
-        pyautogui.moveTo(px, py, duration=0.2)
+    async def _mouse_down(self, button: ButtonType = "left") -> str:
         pyautogui.mouseDown(button=button)
-        return f"{button} button pressed at ({x}, {y})"
+        return f"{button} button pressed at current position"
 
-    async def _mouse_up(self, x: int, y: int, button: ButtonType = "left") -> str:
-        px, py = self.converter.norm_to_pixels(x, y)
-        pyautogui.moveTo(px, py, duration=0.2)
+    async def _mouse_up(self, button: ButtonType = "left") -> str:
         pyautogui.mouseUp(button=button)
-        return f"{button} button released at ({x}, {y})"
+        return f"{button} button released at current position"
 
-    async def _drag_to(self, x: int, y: int, button: ButtonType = "left") -> str:
+    async def _drag_to(self, x: int, y: int, button: ButtonType = "left", duration: float = 0.6) -> str:
         px, py = self.converter.norm_to_pixels(x, y)
-        pyautogui.dragTo(px, py, duration=0.6, button=button)
-        return f"dragged with {button} button to ({x}, {y})"
+        pyautogui.dragTo(px, py, duration=duration, button=button)
+        return f"dragged with {button} button to ({x}, {y}) over {duration}s"
 
     async def _scroll(self, delta: int) -> str:
         pyautogui.scroll(delta)

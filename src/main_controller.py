@@ -38,14 +38,108 @@ class GeminiLiveComputerControl:
 
     def _register_tools(self):
         # Mouse tools
-        self.registry.register(Tool("move_mouse", "Move mouse cursor to normalized coordinates (0-1000).", {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}}, "required": ["x", "y"]}, self.mouse_tools._move_mouse))
-        self.registry.register(Tool("click", "Click at normalized coordinates.", {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}}, "required": ["x", "y"]}, self.mouse_tools._click))
-        self.registry.register(Tool("double_click", "Double-click at normalized coordinates.", {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}}, "required": ["x", "y"]}, self.mouse_tools._double_click))
-        self.registry.register(Tool("mouse_down", "Press and hold a mouse button.", {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}}, "required": ["x", "y"]}, self.mouse_tools._mouse_down))
-        self.registry.register(Tool("mouse_up", "Release a mouse button.", {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}}, "required": ["x", "y"]}, self.mouse_tools._mouse_up))
-        self.registry.register(Tool("drag_to", "Drag mouse to normalized coordinates.", {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}}, "required": ["x", "y"]}, self.mouse_tools._drag_to))
-        self.registry.register(Tool("scroll", "Scroll the mouse wheel.", {"type": "object", "properties": {"delta": {"type": "integer"}}, "required": ["delta"]}, self.mouse_tools._scroll))
-        self.registry.register(Tool("get_mouse_position", "Get current mouse position.", {"type": "object", "properties": {}}, self.mouse_tools._get_mouse_position))
+        self.registry.register(Tool(
+            name="move_mouse",
+            description="Move mouse cursor to normalized coordinates (0-1000) over a specified duration.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer", "description": "X coordinate 0-1000"},
+                    "y": {"type": "integer", "description": "Y coordinate 0-1000"},
+                    "duration": {"type": "number", "description": "Time in seconds to perform the move.", "default": 0.25}
+                },
+                "required": ["x", "y"]
+            },
+            handler=self.mouse_tools._move_mouse
+        ))
+
+        self.registry.register(Tool(
+            name="click",
+            description="Click a mouse button at the current cursor position.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": []
+            },
+            handler=self.mouse_tools._click
+        ))
+
+        self.registry.register(Tool(
+            name="double_click",
+            description="Double-click a mouse button at the current cursor position.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": []
+            },
+            handler=self.mouse_tools._double_click
+        ))
+
+        self.registry.register(Tool(
+            name="mouse_down",
+            description="Press and hold a mouse button at the current cursor position.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": []
+            },
+            handler=self.mouse_tools._mouse_down
+        ))
+
+        self.registry.register(Tool(
+            name="mouse_up",
+            description="Release a mouse button at the current cursor position.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": []
+            },
+            handler=self.mouse_tools._mouse_up
+        ))
+
+        self.registry.register(Tool(
+            name="drag_to",
+            description="Drag from current position to normalized coordinates while holding a button over a specified duration.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"},
+                    "duration": {"type": "number", "description": "Time in seconds to perform the drag.", "default": 0.6}
+                },
+                "required": ["x", "y"]
+            },
+            handler=self.mouse_tools._drag_to
+        ))
+
+        self.registry.register(Tool(
+            name="scroll",
+            description="Scroll the mouse wheel. Positive delta scrolls up, negative down.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "delta": {"type": "integer", "description": "Number of scroll steps"}
+                },
+                "required": ["delta"]
+            },
+            handler=self.mouse_tools._scroll
+        ))
+
+        self.registry.register(Tool(
+            name="get_mouse_position",
+            description="Get current mouse cursor position in normalized and pixel coordinates.",
+            parameters={"type": "object", "properties": {}},
+            handler=self.mouse_tools._get_mouse_position
+        ))
 
         # Keyboard tools
         self.registry.register(Tool("type_text", "Type a string of text.", {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}, self.keyboard_tools._type_text))
