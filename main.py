@@ -5,7 +5,7 @@ import json
 import os
 import socket
 import time
-from typing import Literal
+from typing import Any, Dict, List, Optional, Literal
 
 import pyaudio
 import websockets
@@ -34,6 +34,42 @@ CONFIG = {
 
 ButtonType = Literal["left", "right", "middle"]
 
+# ====================== TOOL SYSTEM ======================
+
+class Tool:
+    """Represents a single callable tool for the AI."""
+    def __init__(self, name: str, description: str, parameters: Dict[str, Any], handler):
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+        self.handler = handler
+
+    def to_declaration(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.parameters
+        }
+
+    async def execute(self, args: Dict[str, Any]) -> Any:
+        return await self.handler(**args)
+
+
+class ToolRegistry:
+    """Central registry for all tools."""
+    def __init__(self):
+        self._tools: Dict[str, Tool] = {}
+
+    def register(self, tool: Tool) -> None:
+        self._tools[tool.name] = tool
+
+    def get(self, name: str) -> Optional[Tool]:
+        return self._tools.get(name)
+
+    def get_declarations(self) -> List[Dict[str, Any]]:
+        return [tool.to_declaration() for tool in self._tools.values()]
+
+
 # ====================== MAIN CLASS ======================
 
 class GeminiLiveComputerControl:
@@ -53,69 +89,284 @@ class GeminiLiveComputerControl:
                                    rate=CONFIG["audio"]["out_rate"], output=True, frames_per_buffer=CONFIG["audio"]["chunk"])
 
         self.screen_w, self.screen_h = pyautogui.size()
-        pyautogui.FAILSAFE = False  # Отключаем fail-safe для агентного управления
 
-        print(f"🖥️  Экран: {self.screen_w}×{self.screen_h} | Fail-safe отключён")
+        # Registry for all AI-accessible tools
+        self.registry = ToolRegistry()
+        self._register_tools()
+
+    # ==================== COORDINATE UTILITIES ====================
 
     def norm_to_pixels(self, x_norm: int, y_norm: int) -> tuple[int, int]:
-        """0-1000 → реальные пиксели с небольшой защитой от краёв"""
+        """Convert normalized coordinates (0-1000) to actual pixel coordinates with safe margins."""
         x = int(x_norm / 1000 * self.screen_w)
         y = int(y_norm / 1000 * self.screen_h)
-        # Защита от краёв (10 пикселей отступ)
-        x = max(10, min(x, self.screen_w - 10))
-        y = max(10, min(y, self.screen_h - 10))
+
         return x, y
 
-    # ==================== MOUSE TOOLS ====================
+    def pixels_to_norm(self, x_px: int, y_px: int) -> tuple[int, int]:
+        """Convert pixel coordinates to normalized (0-1000)."""
+        x_norm = int(x_px / self.screen_w * 1000)
+        y_norm = int(y_px / self.screen_h * 1000)
+        return x_norm, y_norm
 
-    async def move_mouse(self, x: int, y: int) -> str:
+    # ==================== MOUSE TOOLS (HANDLERS) ====================
+
+    async def _move_mouse(self, x: int, y: int) -> str:
         px, py = self.norm_to_pixels(x, y)
         pyautogui.moveTo(px, py, duration=0.25)
         return f"mouse moved to ({x}, {y}) → ({px}, {py})"
 
-    async def click(self, x: int, y: int, button: ButtonType = "left") -> str:
+    async def _click(self, x: int, y: int, button: ButtonType = "left") -> str:
         px, py = self.norm_to_pixels(x, y)
         pyautogui.moveTo(px, py, duration=0.2)
         pyautogui.click(button=button)
         return f"{button} click at ({x}, {y})"
 
-    async def double_click(self, x: int, y: int, button: ButtonType = "left") -> str:
+    async def _double_click(self, x: int, y: int, button: ButtonType = "left") -> str:
         px, py = self.norm_to_pixels(x, y)
         pyautogui.moveTo(px, py, duration=0.2)
         pyautogui.doubleClick(button=button)
         return f"double {button} click at ({x}, {y})"
 
-    async def mouse_down(self, x: int, y: int, button: ButtonType = "left") -> str:
+    async def _mouse_down(self, x: int, y: int, button: ButtonType = "left") -> str:
         px, py = self.norm_to_pixels(x, y)
         pyautogui.moveTo(px, py, duration=0.2)
         pyautogui.mouseDown(button=button)
         return f"{button} button pressed at ({x}, {y})"
 
-    async def mouse_up(self, x: int, y: int, button: ButtonType = "left") -> str:
+    async def _mouse_up(self, x: int, y: int, button: ButtonType = "left") -> str:
         px, py = self.norm_to_pixels(x, y)
         pyautogui.moveTo(px, py, duration=0.2)
         pyautogui.mouseUp(button=button)
         return f"{button} button released at ({x}, {y})"
 
-    async def drag_to(self, x: int, y: int, button: ButtonType = "left") -> str:
-        """Перетаскивание из текущей позиции в новую"""
+    async def _drag_to(self, x: int, y: int, button: ButtonType = "left") -> str:
         px, py = self.norm_to_pixels(x, y)
         pyautogui.dragTo(px, py, duration=0.6, button=button)
         return f"dragged with {button} button to ({x}, {y})"
 
-    async def scroll(self, delta: int) -> str:
+    async def _scroll(self, delta: int) -> str:
         pyautogui.scroll(delta)
         direction = "up" if delta > 0 else "down"
         return f"scrolled {direction} by {abs(delta)}"
 
-    async def get_mouse_position(self) -> dict:
+    async def _get_mouse_position(self) -> dict:
         x, y = pyautogui.position()
-        # Преобразуем обратно в нормализованные координаты
-        x_norm = int(x / self.screen_w * 1000)
-        y_norm = int(y / self.screen_h * 1000)
+        x_norm, y_norm = self.pixels_to_norm(x, y)
         return {"x": x_norm, "y": y_norm, "pixel_x": x, "pixel_y": y}
 
-    # ==================== MAIN LOOPS ====================
+    # ==================== KEYBOARD TOOLS (HANDLERS) ====================
+
+    async def _type_text(self, text: str) -> str:
+        """Type a string of text."""
+        pyautogui.write(text)
+        return f"typed: '{text}'"
+
+    async def _press_key(self, key: str) -> str:
+        """Press and release a single key (e.g., 'enter', 'tab', 'a')."""
+        pyautogui.press(key)
+        return f"pressed key: {key}"
+
+    async def _hotkey(self, keys: List[str]) -> str:
+        """Press a combination of keys (e.g., ['ctrl', 'c'])."""
+        pyautogui.hotkey(*keys)
+        return f"hotkey pressed: {'+'.join(keys)}"
+
+    async def _key_down(self, key: str) -> str:
+        """Press and hold a key."""
+        pyautogui.keyDown(key)
+        return f"key down: {key}"
+
+    async def _key_up(self, key: str) -> str:
+        """Release a key."""
+        pyautogui.keyUp(key)
+        return f"key up: {key}"
+
+    # ==================== TOOL REGISTRATION ====================
+
+    def _register_tools(self):
+        """Register all tools with their descriptions and schemas."""
+        # Mouse tools
+        self.registry.register(Tool(
+            name="move_mouse",
+            description="Move mouse cursor to normalized coordinates (0-1000).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer", "description": "X coordinate 0-1000"},
+                    "y": {"type": "integer", "description": "Y coordinate 0-1000"}
+                },
+                "required": ["x", "y"]
+            },
+            handler=self._move_mouse
+        ))
+
+        self.registry.register(Tool(
+            name="click",
+            description="Click at normalized coordinates with a mouse button.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": ["x", "y"]
+            },
+            handler=self._click
+        ))
+
+        self.registry.register(Tool(
+            name="double_click",
+            description="Double-click at normalized coordinates.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": ["x", "y"]
+            },
+            handler=self._double_click
+        ))
+
+        self.registry.register(Tool(
+            name="mouse_down",
+            description="Press and hold a mouse button at normalized coordinates.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": ["x", "y"]
+            },
+            handler=self._mouse_down
+        ))
+
+        self.registry.register(Tool(
+            name="mouse_up",
+            description="Release a mouse button at normalized coordinates.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": ["x", "y"]
+            },
+            handler=self._mouse_up
+        ))
+
+        self.registry.register(Tool(
+            name="drag_to",
+            description="Drag from current position to normalized coordinates while holding a button.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"}
+                },
+                "required": ["x", "y"]
+            },
+            handler=self._drag_to
+        ))
+
+        self.registry.register(Tool(
+            name="scroll",
+            description="Scroll the mouse wheel. Positive delta scrolls up, negative down.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "delta": {"type": "integer", "description": "Number of scroll steps"}
+                },
+                "required": ["delta"]
+            },
+            handler=self._scroll
+        ))
+
+        self.registry.register(Tool(
+            name="get_mouse_position",
+            description="Get current mouse cursor position in normalized and pixel coordinates.",
+            parameters={"type": "object", "properties": {}},
+            handler=self._get_mouse_position
+        ))
+
+        # Keyboard tools
+        self.registry.register(Tool(
+            name="type_text",
+            description="Type a string of text at the current cursor position.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to type"}
+                },
+                "required": ["text"]
+            },
+            handler=self._type_text
+        ))
+
+        self.registry.register(Tool(
+            name="press_key",
+            description="Press and release a single key. Common keys: 'enter', 'tab', 'space', 'backspace', 'delete', 'escape', 'up', 'down', 'left', 'right', 'a'..'z', '0'..'9', etc.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Key name"}
+                },
+                "required": ["key"]
+            },
+            handler=self._press_key
+        ))
+
+        self.registry.register(Tool(
+            name="hotkey",
+            description="Press a combination of keys (e.g., ['ctrl', 'c'] for copy).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "keys": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of key names to press in order"
+                    }
+                },
+                "required": ["keys"]
+            },
+            handler=self._hotkey
+        ))
+
+        self.registry.register(Tool(
+            name="key_down",
+            description="Press and hold a key. Use key_up to release.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Key name"}
+                },
+                "required": ["key"]
+            },
+            handler=self._key_down
+        ))
+
+        self.registry.register(Tool(
+            name="key_up",
+            description="Release a key that was held down.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Key name"}
+                },
+                "required": ["key"]
+            },
+            handler=self._key_up
+        ))
+
+    # ==================== MAIN LOOPS (unchanged except tool handling) ====================
 
     async def screen_stream_task(self, ws):
         print("📺 Поток экрана запущен")
@@ -159,10 +410,10 @@ class GeminiLiveComputerControl:
                 resp = json.loads(message)
 
                 if "setupComplete" in resp:
-                    print("\n✅ Gemini Live подключён — полный контроль мыши активен\n")
+                    print("\n✅ Gemini Live подключён — полный контроль мыши и клавиатуры активен\n")
                     continue
 
-                # Аудио
+                # Audio playback
                 if "serverContent" in resp:
                     sc = resp["serverContent"]
                     if "modelTurn" in sc:
@@ -170,7 +421,7 @@ class GeminiLiveComputerControl:
                             if "inlineData" in part and part["inlineData"].get("mimeType") == "audio/pcm;rate=24000":
                                 await self.audio_queue.put(base64.b64decode(part["inlineData"]["data"]))
 
-                # Function Calling
+                # Tool calls
                 if "toolCall" in resp:
                     calls = resp["toolCall"].get("functionCalls", [resp["toolCall"]])
                     function_responses = []
@@ -180,24 +431,14 @@ class GeminiLiveComputerControl:
                         args = call.get("args", {})
                         call_id = call.get("id")
 
-                        result = "unknown function"
-
-                        if name == "move_mouse":
-                            result = await self.move_mouse(args.get("x"), args.get("y"))
-                        elif name == "click":
-                            result = await self.click(args.get("x"), args.get("y"), args.get("button", "left"))
-                        elif name == "double_click":
-                            result = await self.double_click(args.get("x"), args.get("y"), args.get("button", "left"))
-                        elif name == "mouse_down":
-                            result = await self.mouse_down(args.get("x"), args.get("y"), args.get("button", "left"))
-                        elif name == "mouse_up":
-                            result = await self.mouse_up(args.get("x"), args.get("y"), args.get("button", "left"))
-                        elif name == "drag_to":
-                            result = await self.drag_to(args.get("x"), args.get("y"), args.get("button", "left"))
-                        elif name == "scroll":
-                            result = await self.scroll(args.get("delta", 0))
-                        elif name == "get_mouse_position":
-                            result = await self.get_mouse_position()
+                        tool = self.registry.get(name)
+                        if tool:
+                            try:
+                                result = await tool.execute(args)
+                            except Exception as e:
+                                result = f"Error executing {name}: {e}"
+                        else:
+                            result = f"Unknown tool: {name}"
 
                         function_responses.append({
                             "id": call_id,
@@ -211,7 +452,7 @@ class GeminiLiveComputerControl:
                         }))
 
             except Exception as e:
-                pass
+                print(f"Error in receive_loop: {e}")
 
     async def send_loop(self, ws):
         print("🎤 Микрофон активен\n")
@@ -227,7 +468,7 @@ class GeminiLiveComputerControl:
 
     async def run(self):
         print("\n" + "="*75)
-        print("   Gemini Live — Полный контроль мыши (Computer Use)")
+        print("   Gemini Live — Полный контроль мыши и клавиатуры (Computer Use)")
         print("="*75 + "\n")
 
         try:
@@ -241,21 +482,13 @@ class GeminiLiveComputerControl:
                             "responseModalities": ["AUDIO"],
                             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": CONFIG["voice"]}}}
                         },
-                        "tools": [{"functionDeclarations": [
-                            {"name": "move_mouse", "description": "Переместить мышь в указанные координаты (0-1000)", "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}}, "required": ["x", "y"]}},
-                            {"name": "click", "description": "Кликнуть кнопкой мыши", "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"]}}}},
-                            {"name": "double_click", "description": "Двойной клик", "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"]}}}},
-                            {"name": "mouse_down", "description": "Зажать кнопку мыши", "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"]}}}},
-                            {"name": "mouse_up", "description": "Отпустить кнопку мыши", "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"]}}}},
-                            {"name": "drag_to", "description": "Перетащить мышь с зажатой кнопкой в новую позицию", "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "button": {"type": "string", "enum": ["left", "right", "middle"]}}}},
-                            {"name": "scroll", "description": "Прокрутить колесико мыши (положительное = вверх)", "parameters": {"type": "object", "properties": {"delta": {"type": "integer"}}}},
-                            {"name": "get_mouse_position", "description": "Получить текущие координаты курсора", "parameters": {"type": "object", "properties": {}}}
-                        ]}]
+                        "tools": [{"functionDeclarations": self.registry.get_declarations()}]
                     }
                 }
 
                 await ws.send(json.dumps(setup))
 
+                # Wait for setupComplete
                 async for msg in ws:
                     if "setupComplete" in json.loads(msg):
                         break
