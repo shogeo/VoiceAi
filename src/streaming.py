@@ -51,6 +51,15 @@ class StreamingManager:
             try:
                 resp = json.loads(message)
 
+                if resp.get("serverContent", {}).get("interrupted") is True:
+                    while not self.controller.audio_queue.empty():
+                        try:
+                            self.controller.audio_queue.get_nowait()
+                            self.controller.audio_queue.task_done()
+                        except asyncio.QueueEmpty:
+                            pass
+                    continue
+
                 if "setupComplete" in resp:
                     print("\n✅ Gemini Live подключён — полный контроль мыши и клавиатуры активен\n")
                     continue
@@ -98,10 +107,9 @@ class StreamingManager:
         print("🎤 Микрофон активен\n")
         while True:
             data = await asyncio.to_thread(self.controller.mic.read, CONFIG["audio"]["chunk"], exception_on_overflow=False)
-            if not self.controller.is_ai_talking:
-                msg = {"realtimeInput": {"audio": {"data": base64.b64encode(data).decode("utf-8"), "mimeType": "audio/pcm;rate=16000"}}}
-                try:
-                    await ws.send(json.dumps(msg))
-                except:
-                    break
+            msg = {"realtimeInput": {"audio": {"data": base64.b64encode(data).decode("utf-8"), "mimeType": "audio/pcm;rate=16000"}}}
+            try:
+                await ws.send(json.dumps(msg))
+            except:
+                break
             await asyncio.sleep(0.001)

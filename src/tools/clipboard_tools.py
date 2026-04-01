@@ -1,5 +1,6 @@
 import pyperclip
 import pyautogui
+import platform
 from typing import List
 
 class ClipboardTools:
@@ -9,8 +10,11 @@ class ClipboardTools:
         return f"Text copied to clipboard."
 
     async def _paste_text(self) -> str:
-        """Pastes the text from the clipboard by simulating Ctrl+V."""
-        pyautogui.hotkey('ctrl', 'v')
+        """Pastes the text from the clipboard by simulating the appropriate hotkey for the OS."""
+        if platform.system() == "Darwin":  # macOS
+            pyautogui.hotkey('command', 'v')
+        else:  # Windows, Linux, etc.
+            pyautogui.hotkey('ctrl', 'v')
         return "Pasted text from clipboard."
 
     async def _read_clipboard(self) -> str:
